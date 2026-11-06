@@ -123,6 +123,8 @@ export const QK = {
   instrumentNames:      (symbols: readonly string[]) =>
                          ['instrument-names', [...new Set(symbols)].sort().join(',')] as const,
   klineLatest:          (symbol: string) => ['kline-latest', symbol] as const,
+  /** 五档盘口 (详情弹窗按需查询, 非 SSE 刷新: 弹窗内定时轮询 + 手动刷新) */
+  depthBook:            (symbol: string) => ['depth-book', symbol] as const,
   stockLevels:          (symbol: string, days?: number) => ['stock-levels', symbol, days ?? 120] as const,
   klineMinute:          (symbol: string, date: string) =>
                              ['kline-minute', symbol, date] as const,

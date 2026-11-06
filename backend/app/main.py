@@ -19,6 +19,7 @@ from app.api import (
     config_backup,
     data,
     definitions,
+    depth,
     events,
     ext_data,
     ext_pages,
@@ -690,6 +691,7 @@ async def auth_middleware(request: Request, call_next):
 app.include_router(core_router)
 app.include_router(auth_api.router)
 app.include_router(kline.router)
+app.include_router(depth.router)
 app.include_router(watchlist.router)
 app.include_router(screener.router)
 app.include_router(backtest.router)

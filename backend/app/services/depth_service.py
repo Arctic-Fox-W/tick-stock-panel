@@ -354,6 +354,19 @@ class DepthService:
                 # 单批失败不影响其他批
         return result
 
+    def get_depth(self, symbols: list[str]) -> dict:
+        """按需查询指定标的(含 ETF 等)的五档盘口快照。
+
+        与 sealed 修正链路解耦 — sealed 只覆盖涨跌停 A 股名单, 本方法提供
+        通用的「查看任意标的盘口」入口 (详情弹窗)。路由与限速复用
+        _call_depth_batch (以生效源为准, 不做跨源回退)。
+        返回 {symbol: {asks, bids, ask_volumes, bid_volumes}}; 无能力时返回 {}。
+        """
+        syms = [s for s in dict.fromkeys(symbols) if s]
+        if not syms or not self._has_capability():
+            return {}
+        return self._call_depth_batch(syms)
+
     def finalize(self) -> None:
         """盘后定版: 拉一次 + 落盘。"""
         if not self._has_capability():

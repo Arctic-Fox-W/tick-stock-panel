@@ -119,6 +119,20 @@ export interface CapabilitiesResponse {
   capabilities: Record<string, CapabilityLimits>
 }
 
+/** 五档盘口快照 (详情弹窗「查看盘口」)。档位为 [价, 量(手)], 卖一在前。 */
+export interface DepthBook {
+  symbol: string
+  available: boolean
+  /** available=false 时的降级原因 (无能力/未取到数据) */
+  reason?: string
+  /** 本次取数完成时间 (epoch 秒, 服务端记录) — 用于展示数据新鲜度 */
+  asof?: number
+  asks?: [number, number][]
+  bids?: [number, number][]
+  ask_volumes?: number[]
+  bid_volumes?: number[]
+}
+
 // ===== Financials =====
 export interface FinancialStatus {
   available: boolean
@@ -3338,6 +3352,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(symbols),
     }),
+
+  /** 五档盘口 (任意标的含 ETF): 买一~买五 / 卖一~卖五 */
+  depth: (symbol: string) =>
+    request<DepthBook>(`/api/depth?symbol=${encodeURIComponent(symbol)}`),
   klineMinute: (symbol: string, date?: string, live?: boolean) =>
     request<{
       symbol: string

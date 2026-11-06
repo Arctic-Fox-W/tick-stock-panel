@@ -12,11 +12,12 @@ import { StockPanel, getDefaultRange } from '@/components/StockPanel'
 import { NavPager, NavWrapToast } from '@/components/NavPager'
 import { WatchlistAddMenu } from '@/components/WatchlistAddMenu'
 import { StockMultiDayIntradayChart } from '@/components/StockMultiDayIntradayChart'
+import { DepthLadder } from '@/components/DepthLadder'
 import { DatePicker } from '@/components/DatePicker'
 import { RuleEditor } from '@/components/monitor/RuleEditor'
 import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
 import { buildMonitorPriceLines } from '@/lib/price-alerts'
-import { usePreferences } from '@/lib/useSharedQueries'
+import { usePreferences, useCapabilities, useQuoteStatus } from '@/lib/useSharedQueries'
 import { setFocusSymbol, clearFocusSymbol } from '@/lib/useQuoteStream'
 import { useDialogBackdrop } from '@/lib/useDialogBackdrop'
 import { storage } from '@/lib/storage'
@@ -214,6 +215,11 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
   // 最新一根K由后端 live 参数直接实时拉取, 与行情列表节奏一致。
   const { data: prefs } = usePreferences()
   const intradayRefetchMs = (prefs?.minute_intraday_refresh_interval ?? 6) * 1000
+
+  // 五档盘口: 仅当生效源能提供 (含 ETF) 时展示; 交易时段随分时节奏定时刷新。
+  const { data: caps } = useCapabilities()
+  const { data: quoteStatusData } = useQuoteStatus()
+  const hasDepth = !!caps?.capabilities?.['depth5.batch']
 
   // 分时档位按分钟源历史深度收窄: 浅源(如仅 5 日)只显示可行档位、默认 5日;
   // 深源(tickflow/未声明)全档位、默认 20日。用户已保存的可行选择优先保留。
@@ -540,6 +546,8 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
             })()}
 
             <div className="min-h-0 flex-1 overflow-auto p-3 sm:px-4 sm:py-3">
+              <div className={cn('flex flex-col gap-3', hasDepth && 'lg:flex-row lg:items-start')}>
+              <div className="min-w-0 flex-1">
               {view === 'daily' ? (
                 <StockPanel
                   onAssetType={handleAssetType}
@@ -580,6 +588,16 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
                 />
                 </div>
               )}
+              </div>
+              {hasDepth && (
+                <DepthLadder
+                  symbol={symbol}
+                  refetchIntervalMs={intradayRefetchMs}
+                  trading={!!quoteStatusData?.is_trading_hours}
+                  className="lg:w-[200px] lg:shrink-0"
+                />
+              )}
+              </div>
             </div>
 
             {/* 扩展插槽: 对话框底部二开区 (无注册时不渲染) */}
