@@ -681,6 +681,8 @@ PORT=3018                      # 服务端口
 
 内置数据源插件 [TdxQuant](https://help.tdx.com.cn/quant/) 提供通达信量化数据服务(实时行情 / 五档盘口 / 日K / 复权因子 / 分钟K),需自备 API Key,使用前请遵守其服务条款
 
+内置数据源插件 [Tushare](https://tushare.pro) 提供 Tushare Pro REST 数据接口(个股/ETF/指数日K / 复权因子 / 财务五表 / 股票维表),需自备 Token,使用前请遵守其服务条款
+
 ## 社区
 
 本开源项目已链接并认可 [LINUX DO 社区](https://linux.do)。

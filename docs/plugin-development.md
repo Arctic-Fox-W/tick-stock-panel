@@ -340,6 +340,11 @@ uv run --extra dev python -m ruff check app/plugins/<your_plugin>/ tests/test_<y
   - `client.py` — 原生层封装(lib 私有物化 + token 注入双 ini + `TDX_AI_DATA_LIB` 指向、空闲首连 "Invalid server response" 重试包装、股票池 12h 缓存)
   - `provider.py` — Provider 实现(快照昨收=LastClose/高低=Max/Min 字段映射、涨跌幅 (Now-LastClose)/LastClose 小数制、RefreshTime 北京墙钟→epoch ms、软失败)
   - `probe.py` — 候选 Key 探测的独立子进程(原生 DLL 每进程单 Key): 分阶段进度留痕定位原生层死点; 服务端明确拒绝凭据或额度时不保存。因 TDX 会话按 IP 复用(错误 Key 在活跃会话下也能拉数), 通过探测仅代表格式与连通性检查通过, 不保证所有数据接口均有权限。
+- **`backend/app/plugins/tushare/`** — Tushare Pro 官方 API 数据源(runtime: none, 纯 HTTP 零依赖)
+  - 提供 `daily`(个股 `daily` / ETF `fund_daily` / 指数 `index_daily` 三类日K, 原始价; `vol` 手直接透传、`amount` 千元 ×1000 转元; 单次请求 6000 行硬上限 → 按 `_WINDOW_DAYS=2000` 日历窗口分片)、`adj_factor`(上游为后复权**累积**因子, 仅在除权日上调; 转换为内部契约的单事件比值 `ex_factor = 当日因子 / 前一交易日因子`(> 1), 只保留变化日, 窗口向前多拉 `_ADJ_LOOKBACK_DAYS` 保证首日可算)、`financial`(metrics 走 `fina_indicator`; income/balance_sheet/cash_flow 走三张报表; shares 股本取 `daily_basic`, 万股 ×10000 转股, 报告期口径缺失置空由维表补全); `stock_basic` 提供 `get_instruments` 股票维表(ts_code 后缀优先推导 exchange); 未声明 realtime / depth5 / minute(上游 `stk_mins` 限频 1 次/小时, 无法支撑同步节奏) → 自动回退 TickFlow; Key 在设置页卡片直接配置(先探后存), 或 `.env` 配 `TUSHARE_API_KEY`
+  - `client.py` — 纯 HTTP 客户端(`POST http://api.tushare.pro`, JSON 信封 `{api_name, token, params, fields}`, 列式响应 `{fields, items}` 解包为行字典, `code != 0` 抛 `TushareError`)
+  - `provider.py` — Provider 实现(三类日K接口按 `asset_type` 分派、财务五表字段映射到 canonical 列、`adj_factor` 累积因子→单事件比值、逐请求 0.15s 节流、软失败、Key 探测、试拉直连上游不吞错误)
+  - `tests/test_tushare_provider.py` — 42 个契约测试(列式信封解析、单位口径、除权因子方向、维表exchange推导、能力声明、Key 优先级、试拉)
 
 TdxQuant 在 SDK 清理响应前检查服务端错误, 保留错误原因并脱敏; 明确的凭据/额度拒绝不重试, 实时分钟轮立即熔断。历史分钟请求失败会通过 `app.data_providers.base.ProviderRequestError` 传递到任务层并标记失败, 不转换成成功的 0 行或跨源重试; 其他插件也可用该异常显式声明请求失败。带时区的分钟请求窗口在插件边界归一为北京墙钟, 再与原生分钟列比较。正常停牌、休市或窗口内无数据的空结果保留原语义。
 

@@ -1,0 +1,21 @@
+# Tushare — 开源金融数据接口插件 (https://tushare.pro)
+# 纯 HTTP REST 源(单一端点 POST http://api.tushare.pro), 无额外依赖 (runtime: none)。
+# 需在 .env 或环境变量配置 TUSHARE_API_KEY, 未配置时插件灰显不可切换。
+
+name: tushare
+display_name: "Tushare"
+runtime: none
+entry: app.plugins.tushare.provider:TushareProvider
+check: app.plugins.tushare.provider:availability
+datasets: [daily, adj_factor, financial]
+api_key_env: TUSHARE_API_KEY   # 声明后设置页提供 Key 输入框(先探后存, secrets.json 优先)
+description: "Tushare 开放数据接口: 日K(个股/ETF/指数, 原始价)、除权因子(累积因子推导为单事件比值)、财务五表(利润/资产负债/现金流/指标/股本); 未接入实时与分钟, 自动回退 TickFlow。"
+install_hint: "点击卡片中的输入框配置 Token(https://tushare.pro/user/token 获取), 或在 .env 中配置 TUSHARE_API_KEY"
+homepage: "https://tushare.pro"
+key_manage_url: "https://tushare.pro/user/token"
+key_manage_label: "Tushare Token 管理"
+usage_notes:
+  - "日K: 个股走 daily、ETF 走 fund_daily、指数走 index_daily; 单次请求上限 6000 行, 长区间自动按日期窗口分片"
+  - "标的维表: 由 stock_basic 自举(含北交所), 股本字段取自最新交易日 daily_basic"
+  - "除权因子: 上游为累积因子, 本插件按相邻交易日比值推导单事件因子并只保留变化日; 多标的时按交易日批量拉取全市场"
+  - "财务数据: 按标的逐只取数(fina_indicator / income / balancesheet / cashflow / daily_basic), 受 Tushare 积分档位与频率限制影响"
