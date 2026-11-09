@@ -636,6 +636,19 @@ def _get_lots(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     return {"count": len(rows), "rows": rows}
 
 
+def _get_xiadan_holdings(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    """读取同花顺交易窗口实时持仓 (截图 + OCR, 只读)。"""
+    del args
+    try:
+        from app.custom.xiadan import _state
+        service = _state.get("service")
+    except Exception:  # noqa: BLE001 — 扩展未加载时降级为可读错误
+        service = None
+    if service is None:
+        raise ValueError("同花顺持仓扩展未就绪, 请确认后端已启动且扩展加载成功。")
+    return service.snapshot()
+
+
 def _list_signals(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     from app.strategy.custom_signals import load_all
 
@@ -1370,6 +1383,7 @@ _LOCAL_TOOLS: dict[str, Callable[[dict[str, Any], ToolContext], Any]] = {
     "get_regime": _get_regime,
     "get_abnormal": _get_abnormal,
     "get_lots": _get_lots,
+    "get_xiadan_holdings": _get_xiadan_holdings,
     "list_signals": _list_signals,
     "run_strategy": _run_strategy,
     "get_factor_values": _get_factor_values,
@@ -1486,6 +1500,14 @@ def _local_tool_schemas() -> list[dict[str, Any]]:
         _schema(
             "get_lots",
             "查询用户的持仓提醒(lots): 持仓数量、成本、目标/止损幅度, 合并最新价与今日涨跌幅。",
+            {},
+            [],
+        ),
+        _schema(
+            "get_xiadan_holdings",
+            "读取同花顺网上股票交易系统(标题「网上股票交易系统5.0」)窗口的实时持仓: "
+            "证券代码、名称、数量、成本价、现价等(截图+OCR 解析, 只读)。"
+            "当用户问「我的实盘持仓/同花顺持仓」时调用。",
             {},
             [],
         ),
@@ -1750,6 +1772,10 @@ def summarize_tool_result(name: str, payload: dict[str, Any]) -> str:
         return f"返回异动 {_count()} 行"
     if name == "get_lots":
         return f"返回持仓提醒 {_count()} 条"
+    if name == "get_xiadan_holdings":
+        if not result.get("window_found"):
+            return "同花顺持仓窗口未找到"
+        return f"返回同花顺持仓 {result.get('count', 0)} 条"
     if name == "list_signals":
         return f"返回 {_count()} 个信号定义"
     if name == "run_strategy":
