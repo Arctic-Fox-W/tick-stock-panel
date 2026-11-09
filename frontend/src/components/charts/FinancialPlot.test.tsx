@@ -17,7 +17,7 @@ const native = vi.hoisted(() => {
   const handlers: Record<string, (event: any) => void> = {}
   const series: any[] = []
   const stretch = vi.fn()
-  const timeScale = { width: () => 500, getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 10 })),
+  const timeScale = { width: () => 500, applyOptions: vi.fn(), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 10 })),
     setVisibleLogicalRange: vi.fn(), fitContent: vi.fn(),
     subscribeSizeChange: vi.fn((cb: any) => { handlers.resize = cb }), unsubscribeSizeChange: vi.fn(),
     subscribeVisibleLogicalRangeChange: vi.fn((cb: any) => { handlers.zoom = cb }), unsubscribeVisibleLogicalRangeChange: vi.fn() }
@@ -64,6 +64,82 @@ afterEach(async () => {
 })
 const data = [{ time: '2026-11-04', value: 10 }, { time: '2026-11-05', value: 11 }]
 const model: PlotSeries[] = [{ id: 'price', type: 'Line', pane: 0, data }]
+
+it('preserves the replay time range when opening intraday or resizing the window', async () => {
+  const render = (visibleBars?: 'all') => act(async () => root.render(<FinancialPlot
+    scope="trade" series={model} height={400} paneHeights={[300]} visibleBars={visibleBars} />))
+  await render('all')
+  expect(native.createChart.mock.calls[0][1]).toMatchObject({ timeScale: { lockVisibleTimeRangeOnResize: true } })
+  await render()
+  expect(native.chart.applyOptions).toHaveBeenCalledWith(expect.objectContaining({
+    timeScale: expect.objectContaining({ lockVisibleTimeRangeOnResize: false }),
+  }))
+  expect(native.createChart).toHaveBeenCalledOnce()
+})
+
+it('fits a newly selected trade of the same symbol without resetting the viewport for indicator changes', async () => {
+  const rows = [
+    { date: '2026-11-04', open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { date: '2026-11-05', open: 10, high: 12, low: 10, close: 11, volume: 120 },
+  ]
+  const render = async (start: string, activeIndicators = ['vol']) => act(async () => root.render(
+    <LightweightDaily symbol="600000.SH" data={rows} visibleBars="all" activeIndicators={activeIndicators}
+      ranges={[{ start, end: '2026-11-05' }]} />))
+  await render('2026-11-04')
+  const initialFits = native.timeScale.fitContent.mock.calls.length
+  await render('2026-11-04', ['vol', 'macd'])
+  expect(native.timeScale.fitContent).toHaveBeenCalledTimes(initialFits)
+  await render('2026-11-05', ['vol', 'macd'])
+  expect(native.timeScale.fitContent).toHaveBeenCalledTimes(initialFits + 1)
+  expect(native.createChart).toHaveBeenCalledOnce()
+})
+
+it('draws bounded replay prices across the selected minute session and omits them outside the holding period', async () => {
+  const updates = vi.spyOn(ChartAnnotations.prototype, 'update')
+  try {
+    const render = async (date: string) => act(async () => root.render(
+      <LightweightIntraday symbol="600000.SH" date={date} prevClose={10}
+        data={[{ datetime: `${date} 09:31:00`, open: 10, high: 11, low: 10, close: 10.5, volume: 100, amount: 105000 }]}
+        priceLines={[{ value: 10.2, label: '买入价', start: '2026-11-04', end: '2026-11-05' }]} />))
+    await render('2026-11-05')
+    const annotations = () => updates.mock.calls.map(([value]) => value).filter(value => value.dates.length === 1).at(-1)!
+    expect(annotations().priceLines).toContainEqual(expect.objectContaining({ value: 10.2, label: '买入价' }))
+    const fillLine = annotations().priceLines!.find(line => line.label === '买入价')!
+    expect(fillLine.start).toBeUndefined()
+    expect(fillLine.end).toBeUndefined()
+    await render('2026-11-06')
+    expect(annotations().priceLines?.some(line => line.label === '买入价')).toBe(false)
+  } finally { updates.mockRestore() }
+})
+
+it('centers index extrema on yesterday close, hides invalid averages and clears limit controls on asset switches', async () => {
+  const updates = vi.spyOn(ChartAnnotations.prototype, 'update')
+  try {
+    const render = async (assetType: 'stock' | 'index') => act(async () => root.render(<LightweightIntraday
+      symbol="000985.SH" assetType={assetType} date="2026-11-06" prevClose={5211.79}
+      priceLimit={{ rate: 0.1, limit_up: 5732.97, limit_down: 4690.61, source: 'rule' }}
+      data={[{ datetime: '2026-11-06 09:30:00', open: 5059.65, high: 5160.75, low: 5059.65,
+        close: 5128.90, volume: 567329187, amount: 906563120224 }]} />))
+    await render('stock')
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '涨跌停')!.click())
+    await render('index')
+    expect(host.textContent).not.toContain('涨跌停')
+    expect(host.textContent).not.toContain('均价')
+    expect(host.textContent).not.toContain('大幅波动')
+    expect(native.chart.removeSeries).toHaveBeenCalled()
+    const price = native.series[1]
+    const range = price.applyOptions.mock.calls.at(-1)[0].autoscaleInfoProvider().priceRange
+    expect(range.minValue).toBeGreaterThan(5050)
+    expect(range.minValue).toBeLessThan(5059.65)
+    expect(range.maxValue).toBeGreaterThan(5160.75)
+    expect((range.minValue + range.maxValue) / 2).toBeCloseTo(5211.79)
+    expect(range.maxValue).toBeLessThan(5400)
+    const annotations = updates.mock.calls.map(([value]) => value).filter(value => value.dates.includes('2026-11-06')).at(-1)!
+    expect(annotations.priceLines?.map(line => line.value)).toEqual([5211.79])
+    expect(annotations.axisTicks).toContainEqual(expect.objectContaining({ value: 5211.79, priority: 3 }))
+    expect(annotations.axisTicks?.some(tick => tick.priority === 2)).toBe(false)
+  } finally { updates.mockRestore() }
+})
 
 it('ETF 日K价格、均线和轴刻度为三位, 切换股票后恢复两位', async () => {
   const rows = [{ date: '2026-11-05', open: 0.751, high: 0.828, low: 0.747, close: 0.827,
@@ -351,7 +427,7 @@ it('identifies the shared lunch slot when hovering instead of presenting the com
   expect(host.textContent).toContain('午间衔接')
 })
 
-it('centers yesterday close and covers extrema and averages without letting distant alerts distort the range', async () => {
+it('centers yesterday close and fits actual extrema without outlying averages or distant alerts distorting the range', async () => {
   const row = { datetime: '2026-11-05 09:30:00', open: 12, high: 13, low: 12, close: 12.5, volume: 10, amount: 14000 }
   const render = async (rows: MinuteKlineRow[] = [row], prevClose = 10, priceLines: { value: number; end?: string }[] = []) => act(async () => root.render(
     <LightweightIntraday symbol="ETF" date="2026-11-05" data={rows} prevClose={prevClose} priceLines={priceLines} />))
@@ -361,9 +437,9 @@ it('centers yesterday close and covers extrema and averages without letting dist
     const options = price.applyOptions.mock.calls.at(-1)?.[0] ?? native.chart.addSeries.mock.calls[1][1]
     return options.autoscaleInfoProvider().priceRange
   }
-  expect(priceRange()).toEqual({ minValue: 6, maxValue: 14 })
+  expect(priceRange()).toEqual({ minValue: 7, maxValue: 13 })
   await render([row], 10, [{ value: 15 }, { value: 50, end: '2026-11-04' }, { value: NaN }])
-  expect(priceRange()).toEqual({ minValue: 6, maxValue: 14 })
+  expect(priceRange()).toEqual({ minValue: 7, maxValue: 13 })
   await render([{ ...row, amount: null }])
   expect(priceRange()).toEqual({ minValue: 7, maxValue: 13 })
   expect(host.textContent).toContain('高 13.00')
@@ -403,6 +479,8 @@ it('links ETF price and percentage scales, including the single-session tab, and
   expect(leftCall[1].priceFormat.formatter(1)).toBe('+1.00%')
   const right = priceCall[1].autoscaleInfoProvider().priceRange
   const left = leftCall[1].autoscaleInfoProvider().priceRange
+  expect((right.minValue + right.maxValue) / 2).toBeCloseTo(0.76)
+  expect(left.minValue).toBeCloseTo(-left.maxValue)
   expect(left.minValue).toBeCloseTo((right.minValue / 0.76 - 1) * 100)
   expect(left.maxValue).toBeCloseTo((right.maxValue / 0.76 - 1) * 100)
   expect(priceCall[1].priceFormat.tickmarksFormatter([0.76])).toEqual([''])
@@ -575,4 +653,43 @@ it('keeps compact event labels visible as small dots when zooming out', async ()
   native.timeScale.getVisibleLogicalRange.mockReturnValueOnce({ from: 0, to: 100 })
   native.handlers.zoom({})
   expect(native.markers.setMarkers.mock.calls.at(-1)![0][0]).toMatchObject({ text: '', shape: 'circle', size: 0.5 })
+})
+
+it('keeps trade directions and prices readable when fitting a long holding period', async () => {
+  await act(async () => root.render(<LightweightDaily symbol="A" visibleBars="all"
+    data={[{ date: '2026-11-05', open: 10, high: 11, low: 9, close: 11 }]}
+    markers={[{ date: '2026-11-05', kind: 'buy', label: '买 10.00' }, { date: '2026-11-05', kind: 'sell', label: '卖 11.00' }]} />))
+  native.timeScale.getVisibleLogicalRange.mockReturnValueOnce({ from: 0, to: 100 })
+  native.handlers.zoom({})
+  expect(native.markers.setMarkers.mock.calls.at(-1)![0]).toMatchObject([
+    { text: '买 10.00', shape: 'arrowUp' }, { text: '卖 11.00', shape: 'arrowDown' },
+  ])
+})
+
+it('reports the crosshair price and pixel scale for level hit testing', async () => {
+  const onCrosshairMove = vi.fn()
+  await act(async () => root.render(<FinancialPlot scope="analysis" series={model} height={400} paneHeights={[300]}
+    onCrosshairMove={onCrosshairMove} />))
+  native.series[0].coordinateToPrice.mockImplementation((y: number) => 100 - y)
+  await act(async () => native.handlers.hover({ time: '2026-11-04', paneIndex: 0, point: { x: 10, y: 20 } }))
+  expect(onCrosshairMove).toHaveBeenLastCalledWith({ time: '2026-11-04', price: 80, pixelsPerPrice: 1 })
+  await act(async () => native.handlers.hover({ paneIndex: 0 }))
+  expect(onCrosshairMove).toHaveBeenLastCalledWith(null)
+  await act(async () => native.handlers.hover({ time: '2026-11-04', paneIndex: 1, point: { x: 10, y: 20 } }))
+  expect(onCrosshairMove).toHaveBeenLastCalledWith(null)
+})
+
+it('reserves a right label band in pixels and applies per-series line widths', async () => {
+  await act(async () => root.render(<FinancialPlot scope="analysis" series={[{ ...model[0], lineWidth: 2 }]}
+    height={400} paneHeights={[300]} rightOffsetPixels={140} />))
+  expect(native.createChart.mock.calls[0][1]).toMatchObject({ timeScale: { rightOffset: 0, rightOffsetPixels: 140 } })
+  expect(native.chart.addSeries.mock.calls[0][1].lineWidth).toBe(2)
+})
+
+it('keeps the requested candle count visible while reserving the right label band', async () => {
+  const rows = Array.from({ length: 200 }, (_, index) => ({ time: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10), value: 10 }))
+  await act(async () => root.render(<FinancialPlot scope="analysis" series={[{ id: 'price', type: 'Line', pane: 0, data: rows }]}
+    height={400} paneHeights={[300]} visibleBars={120} rightOffsetPixels={140} />))
+  expect(native.createChart.mock.calls[0][1]).toMatchObject({ timeScale: { fixRightEdge: false, rightOffsetPixels: 140 } })
+  expect(native.timeScale.applyOptions).toHaveBeenLastCalledWith({ rightOffsetPixels: 140 })
 })

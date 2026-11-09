@@ -15,6 +15,8 @@ export interface PlotSeries {
   pane: number
   data: PlotData[]
   color?: string
+  /** 线宽(默认 1)；悬浮高亮时加粗 */
+  lineWidth?: 1 | 2 | 3 | 4
   priceFormat?: 'price' | 'volume' | 'percent'
   priceScaleId?: 'left'
   axisTicks?: PlotAxisTick[]
@@ -63,7 +65,7 @@ export interface IntradayPoint {
   sourceTimes?: string[]
 }
 
-export function buildIntradayModel(sessions: MinuteKlineSession[], showAverage = true) {
+export function buildIntradayModel(sessions: MinuteKlineSession[], showAverage = true, assetType?: 'stock' | 'etf' | 'index') {
   const series: PlotSeries[] = []
   const points = new Map<string, IntradayPoint>()
   const timeline: WhitespaceData<Time>[] = []
@@ -73,7 +75,7 @@ export function buildIntradayModel(sessions: MinuteKlineSession[], showAverage =
       .filter(row => row.datetime.slice(0, 10) === session.date && SESSION_TIMES.has(formatMinuteTime(row.datetime))
         && Number.isFinite(row.close) && row.close > 0)
       .sort((a, b) => a.datetime.localeCompare(b.datetime))
-    const averages = computeIntradayAverage(rows)
+    const averages = computeIntradayAverage(rows, assetType)
     const byTime = new Map(rows.map((row, i) => [formatMinuteTime(row.datetime), { row, average: averages[i] }]))
     const lastPrice = rows.at(-1)?.close
     const color = session.prev_close == null || lastPrice == null ? CHART_COLORS.flat
@@ -82,7 +84,7 @@ export function buildIntradayModel(sessions: MinuteKlineSession[], showAverage =
     let previous = session.prev_close
     const flush = () => {
       if (priceSegment.length) series.push({ id: `${session.date}:price:${segment}`, type: 'Area', pane: 0, color, data: priceSegment })
-      if (showAverage && averageSegment.length) series.push({ id: `${session.date}:average:${segment}`, type: 'Line', pane: 0, color: CHART_COLORS.average, data: averageSegment })
+      if (showAverage && assetType !== 'index' && averageSegment.length) series.push({ id: `${session.date}:average:${segment}`, type: 'Line', pane: 0, color: CHART_COLORS.average, data: averageSegment })
       priceSegment = []; averageSegment = []; segment++
     }
     for (const minute of PLOT_DAY_TIMES) {

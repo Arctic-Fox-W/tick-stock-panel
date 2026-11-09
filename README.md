@@ -43,15 +43,15 @@
 
 <div align="center">
 
-<a href="https://www.runninghub.ai/call-api?source=github&inviteCode=edt5wh7c" target="_blank" rel="noopener noreferrer">
+<a href="https://www.runninghub.ai/zh-cn/call-api/llm/models?source=github&inviteCode=edt5wh7c" target="_blank" rel="noopener noreferrer">
   <img src="docs/sponsors/runninghub-banner-v3.svg?v=3" alt="RunningHub API — 单一接口直连 400+ 主流大模型" width="100%">
 </a>
 
-<a href="https://www.runninghub.ai/call-api?source=github&inviteCode=edt5wh7c" target="_blank" rel="noopener noreferrer">
+<a href="https://www.runninghub.ai/zh-cn/call-api/llm/models?source=github&inviteCode=edt5wh7c" target="_blank" rel="noopener noreferrer">
   <img src="docs/sponsors/runninghub-intro-card.svg?v=4" alt="About RunningHub API — 产品介绍" width="100%">
 </a>
 
-**本项目由 [RunningHub](https://www.runninghub.ai/call-api?source=github&inviteCode=edt5wh7c) 提供支持** · 单一接口直连 400+ 主流大模型 · [DeepSeek v4.1 Flash 3-6 折](https://www.runninghub.ai/call-api?source=github&inviteCode=edt5wh7c) · 免费测试
+**本项目由 [RunningHub](https://www.runninghub.ai/zh-cn/call-api/llm/models?source=github&inviteCode=edt5wh7c) 提供支持** · 单一接口直连 400+ 主流大模型 · [DeepSeek v4.1 Flash 3-6 折](https://www.runninghub.ai/zh-cn/call-api/llm/models?source=github&inviteCode=edt5wh7c) · 免费测试
 
 </div>
 
@@ -357,6 +357,7 @@ curl -H "Authorization: Bearer tsp_xxxx" \
 ```bash
 docker run -d --name tsp \
   -p 3018:3018 \
+  -e DATA_DIR=/app/data \
   -v "${PWD}/data:/app/data" \
   ghcr.io/shy3130/tick-stock-panel:latest
 ```
@@ -383,7 +384,8 @@ docker run -d --name tsp \
 
 本项目每次推送都由 GitHub Actions 自动构建多架构镜像并发布到 GHCR,拿来即用:
 
-- 需要配置时:从 [.env.example](./.env.example) 复制出 `.env`,命令里加 `--env-file .env`。
+- 需要配置时:从 [.env.example](./.env.example) 复制出 `.env`,命令里加 `--env-file .env`,保留 `-e DATA_DIR=/app/data` 与数据挂载。自定义目录时,同时修改 `DATA_DIR` 和挂载目标。
+- 升级前若凭据实际保存在容器的 `/data` 而非已挂载目录,请先按[旧容器数据备份说明](./docs/deployment.md#docker-升级前核对数据目录)备份迁出,再重建容器。
 - Linux `docker run` 部署:容器内要通过 `host.docker.internal` 访问宿主机服务(如自定义数据源)时,命令需加 `--add-host=host.docker.internal:host-gateway`;升级重建容器时务必保留 `-v ${PWD}/data:/app/data` 挂载并提前备份 `data/`,否则容器层数据会随旧容器静默丢失(详见 [docs/deployment.md](./docs/deployment.md))。
 - 跑自己改过的代码:fork 后到仓库 **Actions** 页启用 workflow(fork 默认禁用),构建出的 `ghcr.io/<你的用户名>/tick-stock-panel` 用法相同。
 - 想用 compose 编排(挂载 `.env` / `tiers.yaml`):参考 [docker-compose.yml](./docker-compose.yml),把 `build:` 段换成 `image: ghcr.io/shy3130/tick-stock-panel:latest`。
